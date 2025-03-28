@@ -71,11 +71,11 @@ class ApiService {
         } catch (e) {
           String errorMessage = "Error accessing $apiUrl on attempt $attempt";
           print(errorMessage);
-          _showToast(errorMessage);
+          // _showToast(errorMessage);
 
           // If the first URL fails and there's another URL to try, show a fallback message
           if (i == 0 && apiUrls.length > 1) {
-            _showToast("Falling back to ${apiUrls[1]}");
+            // _showToast("Falling back to ${apiUrls[1]}");
           }
         }
       }
@@ -84,12 +84,12 @@ class ApiService {
         final delay = initialRetryDelay * (1 << (attempt - 1)); // Exponential backoff
         String retryMessage = "Waiting for ${delay.inSeconds} seconds before retrying...";
         print(retryMessage);
-        _showToast(retryMessage);
+        // _showToast(retryMessage);
         await Future.delayed(delay);
       }
     }
     String finalError = "All API URLs are unreachable after $maxRetries attempts";
-    _showToast(finalError);
+    // _showToast(finalError);
     throw Exception(finalError);
   }
   Future<bool> checkIdNumber(String idNumber) async {
