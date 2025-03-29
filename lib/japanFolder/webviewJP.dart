@@ -6,9 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import '../auto_update.dart';
 import 'package:http/http.dart' as http;
-import 'package:flutter_downloader/flutter_downloader.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 
 class SoftwareWebViewScreenJP extends StatefulWidget {
@@ -287,6 +284,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> {
       return true; // Allow the app to pop the current screen
     }
   }
+
   Future<void> _showInputMethodPicker() async {
     try {
       if (Platform.isAndroid) {
