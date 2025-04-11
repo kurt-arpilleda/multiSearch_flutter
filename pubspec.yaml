@@ -2,7 +2,7 @@ name: multi_search
 description: "Multi Search web to flutter app"
 publish_to: 'none'
 
-version: 1.0.7+8
+version: 1.0.8+9
 
 environment:
   sdk: ^3.7.2
