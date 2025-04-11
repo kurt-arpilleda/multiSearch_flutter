@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'api_service.dart';
-import 'japanFolder/api_serviceJP.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 import 'auto_update.dart';
+import 'japanFolder/api_serviceJP.dart';
 import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+import 'package:mime/mime.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'dart:io';
 import 'package:unique_identifier/unique_identifier.dart';
 
@@ -20,15 +23,18 @@ class SoftwareWebViewScreen extends StatefulWidget {
 }
 
 class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
-  late final WebViewController _controller;
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ApiService apiService = ApiService();
   final ApiServiceJP apiServiceJP = ApiServiceJP();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  InAppWebViewController? webViewController;
+  PullToRefreshController? pullToRefreshController;
+
   String? _webUrl;
   String? _profilePictureUrl;
   String? _firstName;
   String? _surName;
-  String? _idNumber; // Added to store ID number from device
+  String? _idNumber;
   bool _isLoading = true;
   int? _currentLanguageFlag;
   double _progress = 0;
@@ -42,36 +48,22 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
   @override
   void initState() {
     super.initState();
-    _controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (String url) {
-            setState(() {
-              _isLoading = true;
-              _progress = 0;
-            });
-          },
-          onProgress: (int progress) {
-            setState(() {
-              _progress = progress / 100;
-            });
-          },
-          onPageFinished: (String url) {
-            setState(() {
-              _isLoading = false;
-              _progress = 1;
-            });
-          },
-        ),
-      );
 
+    pullToRefreshController = PullToRefreshController(
+      settings: PullToRefreshSettings(
+        color: Colors.blue,
+      ),
+      onRefresh: () async {
+        if (webViewController != null) {
+          await webViewController!.reload();
+        }
+      },
+    );
     _fetchAndLoadUrl();
+    _fetchDeviceInfo();
     _loadCurrentLanguageFlag();
     _loadPhOrJp();
-    _fetchDeviceInfo(); // New method to fetch device info and profile
 
-    // Check for updates
     AutoUpdate.checkForUpdate(context);
   }
 
@@ -140,8 +132,11 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
       if (mounted) {
         setState(() {
           _webUrl = url;
+          _isLoading = true;
         });
-        _controller.loadRequest(Uri.parse(url));
+        if (webViewController != null) {
+          await webViewController!.loadUrl(urlRequest: URLRequest(url: WebUri(url)));
+        }
       }
     } catch (e) {
       debugPrint("Error fetching link: $e");
@@ -156,20 +151,23 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
   }
 
   Future<void> _updateLanguageFlag(int flag) async {
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+
     if (_idNumber != null) {
       setState(() {
         _currentLanguageFlag = flag;
       });
       try {
         await apiService.updateLanguageFlag(_idNumber!, flag);
-        SharedPreferences prefs = await SharedPreferences.getInstance();
         await prefs.setInt('languageFlag', flag);
 
-        String? currentUrl = await _controller.currentUrl();
-        if (currentUrl != null) {
-          _controller.loadRequest(Uri.parse(currentUrl));
-        } else {
-          _controller.reload();
+        if (webViewController != null) {
+          WebUri? currentUri = await webViewController!.getUrl();
+          if (currentUri != null) {
+            await webViewController!.loadUrl(urlRequest: URLRequest(url: currentUri));
+          } else {
+            await webViewController!.reload();
+          }
         }
       } catch (e) {
         print("Error updating language flag: $e");
@@ -243,7 +241,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
       });
     }
   }
-
   void _showCountryLoginDialog(BuildContext context, String country) {
     if (_isCountryDialogShowing) return;
 
@@ -286,12 +283,50 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
       _isCountryDialogShowing = false;
     });
   }
+
   Future<bool> _onWillPop() async {
-    if (await _controller.canGoBack()) {
-      _controller.goBack();
+    if (webViewController != null && await webViewController!.canGoBack()) {
+      webViewController!.goBack();
       return false;
     } else {
       return true;
+    }
+  }
+
+  // Function to check if a URL is a download link
+  bool _isDownloadableUrl(String url) {
+    final mimeType = lookupMimeType(url);
+    if (mimeType == null) return false;
+
+    // List of common download file extensions
+    const downloadableExtensions = [
+      'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+      'zip', 'rar', '7z', 'tar', 'gz',
+      'apk', 'exe', 'dmg', 'pkg',
+      'jpg', 'jpeg', 'png', 'gif', 'bmp',
+      'mp3', 'wav', 'ogg',
+      'mp4', 'avi', 'mov', 'mkv',
+      'txt', 'csv', 'json', 'xml'
+    ];
+
+    return downloadableExtensions.any((ext) => url.toLowerCase().contains('.$ext'));
+  }
+
+  // Function to launch URL in external browser
+  Future<void> _launchInBrowser(String url) async {
+    if (await canLaunchUrl(Uri.parse(url))) {
+      await launchUrl(
+        Uri.parse(url),
+        mode: LaunchMode.externalApplication,
+      );
+    } else {
+      Fluttertoast.showToast(
+        msg: "Could not launch browser",
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+      );
     }
   }
   Future<void> _showInputMethodPicker() async {
@@ -300,6 +335,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
         const MethodChannel channel = MethodChannel('input_method_channel');
         await channel.invokeMethod('showInputMethodPicker');
       } else {
+        // iOS doesn't have this capability
         Fluttertoast.showToast(
           msg: "Keyboard selection is only available on Android",
           toastLength: Toast.LENGTH_SHORT,
@@ -310,7 +346,6 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
       debugPrint("Error showing input method picker: $e");
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
@@ -353,8 +388,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
                     ),
                   ],
                 ),
-              )
-                  : null,
+              ) : null,
               actions: [
                 Padding(
                   padding: const EdgeInsets.only(right: 10.0),
@@ -649,7 +683,95 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> {
           child: Stack(
             children: [
               if (_webUrl != null)
-                WebViewWidget(controller: _controller),
+                InAppWebView(
+                  initialUrlRequest: URLRequest(url: WebUri(_webUrl!)),
+                  initialSettings: InAppWebViewSettings(
+                    mediaPlaybackRequiresUserGesture: false,
+                    javaScriptEnabled: true,
+                    useHybridComposition: true,
+                    allowsInlineMediaPlayback: true,
+                    allowContentAccess: true,
+                    allowFileAccess: true,
+                    cacheEnabled: true,
+                    javaScriptCanOpenWindowsAutomatically: true,
+                    allowUniversalAccessFromFileURLs: true,
+                    allowFileAccessFromFileURLs: true,
+                    useOnDownloadStart: true,
+                    transparentBackground: true,
+                    thirdPartyCookiesEnabled: true,
+                    domStorageEnabled: true,
+                    databaseEnabled: true,
+                    hardwareAcceleration: true,
+                    supportMultipleWindows: false,
+                    useWideViewPort: true,
+                    loadWithOverviewMode: true,
+                    mixedContentMode: MixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+                    verticalScrollBarEnabled: false,
+                    horizontalScrollBarEnabled: false,
+                    overScrollMode: OverScrollMode.NEVER,
+                    forceDark: ForceDark.OFF,
+                    forceDarkStrategy: ForceDarkStrategy.WEB_THEME_DARKENING_ONLY,
+                    saveFormData: true,
+                    userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
+                  ),
+                  pullToRefreshController: pullToRefreshController,
+                  onWebViewCreated: (controller) {
+                    webViewController = controller;
+                  },
+                  onLoadStart: (controller, url) {
+                    setState(() {
+                      _isLoading = true;
+                      _progress = 0;
+                    });
+                  },
+                  onLoadStop: (controller, url) {
+                    pullToRefreshController?.endRefreshing();
+                    setState(() {
+                      _isLoading = false;
+                      _progress = 1;
+                    });
+                  },
+                  onProgressChanged: (controller, progress) {
+                    setState(() {
+                      _progress = progress / 100;
+                    });
+                  },
+                  onReceivedServerTrustAuthRequest: (controller, challenge) async {
+                    return ServerTrustAuthResponse(action: ServerTrustAuthResponseAction.PROCEED);
+                  },
+                  onPermissionRequest: (controller, request) async {
+                    List<Permission> permissionsToRequest = [];
+
+                    if (request.resources.contains(PermissionResourceType.CAMERA)) {
+                      permissionsToRequest.add(Permission.camera);
+                    }
+                    if (request.resources.contains(PermissionResourceType.MICROPHONE)) {
+                      permissionsToRequest.add(Permission.microphone);
+                    }
+
+                    Map<Permission, PermissionStatus> statuses = await permissionsToRequest.request();
+                    bool allGranted = statuses.values.every((status) => status.isGranted);
+
+                    return PermissionResponse(
+                      resources: request.resources,
+                      action: allGranted ? PermissionResponseAction.GRANT : PermissionResponseAction.DENY,
+                    );
+                  },
+                  // Handle download links by opening in external browser
+                  shouldOverrideUrlLoading: (controller, navigationAction) async {
+                    final url = navigationAction.request.url?.toString() ?? '';
+
+                    if (_isDownloadableUrl(url)) {
+                      await _launchInBrowser(url);
+                      return NavigationActionPolicy.CANCEL;
+                    }
+                    return NavigationActionPolicy.ALLOW;
+                  },
+                  // Also handle explicit download requests
+                  onDownloadStartRequest: (controller, downloadStartRequest) async {
+                    await _launchInBrowser(downloadStartRequest.url.toString());
+                  },
+                ),
               if (_isLoading)
                 LinearProgressIndicator(
                   value: _progress,
