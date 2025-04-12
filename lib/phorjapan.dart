@@ -106,9 +106,9 @@ class _PhOrJpScreenState extends State<PhOrJpScreen> with WidgetsBindingObserver
 
       if (response['success'] == true) {
         if (value == 'ph') {
-          _navigateWithTransition(context, SoftwareWebViewScreen(linkID: 4));
+          _navigateWithTransition(context, SoftwareWebViewScreen(linkID: 2));
         } else if (value == 'jp') {
-          _navigateWithTransition(context, SoftwareWebViewScreenJP(linkID: 4));
+          _navigateWithTransition(context, SoftwareWebViewScreenJP(linkID: 2));
         }
       } else {
         _showLoginDialog(context, value);
