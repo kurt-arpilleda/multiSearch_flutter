@@ -96,12 +96,11 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
   }
 
   Future<void> _fetchInitialData() async {
-    await _fetchAndLoadUrl();
     await _fetchDeviceInfo();
     await _loadCurrentLanguageFlag();
+    await _fetchAndLoadUrl();
     await _loadPhOrJp();
   }
-
   Future<void> _fetchDeviceInfo() async {
     try {
       String? deviceId = await UniqueIdentifier.serial;
@@ -143,12 +142,13 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreen> with Widg
 
         String fallbackUrl = "${ApiService.apiUrls[1]}V4/11-A%20Employee%20List%20V2/profilepictures/$profilePictureFileName";
         bool isFallbackUrlValid = await _isImageAvailable(fallbackUrl);
-
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setInt('languageFlag', profileData["languageFlag"]);
         setState(() {
           _firstName = profileData["firstName"];
           _surName = profileData["surName"];
           _profilePictureUrl = isPrimaryUrlValid ? primaryUrl : isFallbackUrlValid ? fallbackUrl : null;
-          _currentLanguageFlag = profileData["languageFlag"];
+          _currentLanguageFlag = profileData["languageFlag"] ?? _currentLanguageFlag ?? 1;
         });
       }
     } catch (e) {
