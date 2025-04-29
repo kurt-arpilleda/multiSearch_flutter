@@ -150,7 +150,7 @@ class _SoftwareWebViewScreenState extends State<SoftwareWebViewScreenJP> with Wi
           _firstName = profileData["firstName"];
           _surName = profileData["surName"];
           _profilePictureUrl = isPrimaryUrlValid ? primaryUrl : isFallbackUrlValid ? fallbackUrl : null;
-          _currentLanguageFlag = profileData["languageFlag"] ?? _currentLanguageFlag ?? 1;
+          _currentLanguageFlag = profileData["languageFlag"] ?? _currentLanguageFlag ?? 2;
         });
       }
     } catch (e) {
